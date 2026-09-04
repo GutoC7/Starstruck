@@ -8,6 +8,11 @@ from core.generator import PuzzleGenerator
 class GameUI:
     def __init__(self):
         pygame.init()
+
+        # New Animation Event Timer (Fires every 40ms)
+        self.ANIMATE_EVENT = pygame.USEREVENT + 1
+        pygame.time.set_timer(self.ANIMATE_EVENT, 40) 
+
         self.cell_size = 60
         self.margin = 20
         self.top_bar = 70  # Space at the top for the timer
@@ -181,10 +186,15 @@ class GameUI:
         running = True
         
         while running:
+            # 1. INPUT PHASE
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
                 
+                elif event.type == self.ANIMATE_EVENT: 
+                    if self.state == "PLAYING" and self.engine and self.engine.animation_queue:
+                        self.engine.process_animation_step()
+                                        
                 # --- KEYBOARD CONTROLS ---
                 elif event.type == pygame.KEYDOWN:
                     if self.state == "MAIN_MENU":
@@ -237,10 +247,7 @@ class GameUI:
                         elif event.button == 3:
                             self.engine.toggle_mark(r, c)
                             
-                        if self.engine.is_solved():
-                            self.accumulated_time += pygame.time.get_ticks() - self.start_time
-                            self.state = "WON"
-                            
+                                                    
                 # --- MOUSE DRAG CONTROLS (Right Click to Mark) ---
                 elif event.type == pygame.MOUSEMOTION and self.state == "PLAYING":
                     if pygame.mouse.get_pressed()[2]: # Index 2 is the Right Mouse Button
@@ -253,7 +260,14 @@ class GameUI:
                             if self.engine.board[r][c] == CellState.EMPTY:
                                 self.engine.toggle_mark(r, c)
 
-            # --- RENDERING ---
+            # 2. UPDATE PHASE (New global win check)
+            # Evaluate every frame, but only trigger a win if animations are completely finished
+            if self.state == "PLAYING" and self.engine:
+                if not self.engine.animation_queue and self.engine.is_solved():
+                    self.accumulated_time += pygame.time.get_ticks() - self.start_time
+                    self.state = "WON"
+
+            # 3. RENDER PHASE
             if self.state == "MAIN_MENU":
                 self.draw_main_menu()
             else:

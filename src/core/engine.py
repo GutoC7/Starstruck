@@ -12,26 +12,53 @@ class StarstruckEngine:
         self.regions = regions
         self.board = [[CellState.EMPTY for _ in range(size)] for _ in range(size)]
         self.stars: Set[Tuple[int, int]] = set()
+        
+        # New: Queue to hold groups of cells to mark, ordered by distance
+        self.animation_queue: List[List[Tuple[int, int]]] = []
 
     def clear(self):
-        """Resets the board to an initial empty state."""
         self.board = [[CellState.EMPTY for _ in range(self.size)] for _ in range(self.size)]
         self.stars.clear()
+        self.animation_queue.clear()
 
     def _auto_mark(self, r: int, c: int):
-        """Marks the row, column, and 8-neighbors as impossible."""
-        # Row and Column
+        """Calculates marks and queues them sequentially based on distance."""
+        pending_marks = {}
+        
         for i in range(self.size):
-            if self.board[r][i] == CellState.EMPTY: self.board[r][i] = CellState.MARK
-            if self.board[i][c] == CellState.EMPTY: self.board[i][c] = CellState.MARK
+            # Row expansion
+            if self.board[r][i] == CellState.EMPTY:
+                dist = abs(c - i)
+                if dist not in pending_marks: pending_marks[dist] = []
+                pending_marks[dist].append((r, i))
             
-        # 8-way Adjacency
+            # Column expansion
+            if self.board[i][c] == CellState.EMPTY:
+                dist = abs(r - i)
+                if dist not in pending_marks: pending_marks[dist] = []
+                pending_marks[dist].append((i, c))
+                
+        # 8-way Adjacency (Force into distance 1)
         for dr in [-1, 0, 1]:
             for dc in [-1, 0, 1]:
                 nr, nc = r + dr, c + dc
                 if 0 <= nr < self.size and 0 <= nc < self.size:
                     if self.board[nr][nc] == CellState.EMPTY:
-                        self.board[nr][nc] = CellState.MARK
+                        if 1 not in pending_marks: pending_marks[1] = []
+                        if (nr, nc) not in pending_marks[1]:
+                            pending_marks[1].append((nr, nc))
+                            
+        # Push to the animation queue sorted by distance
+        for d in sorted(pending_marks.keys()):
+            self.animation_queue.append(pending_marks[d])
+
+    def process_animation_step(self):
+        """Pops the next distance group and marks them on the board."""
+        if self.animation_queue:
+            step_cells = self.animation_queue.pop(0)
+            for r, c in step_cells:
+                if self.board[r][c] == CellState.EMPTY:
+                    self.board[r][c] = CellState.MARK
 
     def toggle_star(self, r: int, c: int):
         if self.board[r][c] == CellState.STAR:
