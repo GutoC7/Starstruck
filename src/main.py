@@ -4,17 +4,15 @@ from ui import GameUI
 
 def main():
     board_size = 8
-    print("Generating puzzle... this might take a second.")
+    print("Generating initial puzzle... this might take a second.")
     
-    # 1. Generate the puzzle layout
     generator = PuzzleGenerator(board_size)
     regions, solution = generator.generate()
     
-    # 2. Initialize the game engine with the generated regions
     engine = StarstruckEngine(board_size, regions)
     
-    # 3. Launch the UI
-    app = GameUI(engine)
+    # Pass both to the UI
+    app = GameUI(engine, generator)
     app.run()
 
 if __name__ == "__main__":
