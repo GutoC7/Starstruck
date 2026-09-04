@@ -46,36 +46,44 @@ class PuzzleGenerator:
         return stars
 
     def _grow_regions(self, stars: List[Tuple[int, int]], hard_mode: bool) -> Optional[List[List[int]]]:
-        """Grows regions using either random BFS (Easy) or size-balanced Priority BFS (Hard)."""
         regions = [[-1 for _ in range(self.size)] for _ in range(self.size)]
         frontier: List[Tuple[int, int, int]] = []
+        region_sizes = {i: 0 for i in range(self.size)}
         
-        # Track the cell count of each region to balance growth
-        region_sizes = {i: 1 for i in range(self.size)}
-        
+        # 1. Place the initial seed stars
         for region_id, (r, c) in enumerate(stars):
             regions[r][c] = region_id
-            for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-                if 0 <= r + dr < self.size and 0 <= c + dc < self.size:
-                    frontier.append((r + dr, c + dc, region_id))
-                    
-        while frontier:
-            if hard_mode:
-                # 1. Identify active regions currently in the frontier
-                active_regions = set(f[2] for f in frontier)
-                
-                # 2. Find the smallest size among those active regions
-                min_size = min(region_sizes[r_id] for r_id in active_regions)
-                
-                # 3. Filter frontier to ONLY include candidates from the smallest regions
-                candidates = [i for i, f in enumerate(frontier) if region_sizes[f[2]] == min_size]
-                
-                # 4. Pick randomly from the smallest to maintain organic shapes
-                idx = random.choice(candidates)
-            else:
-                # Easy mode: Pure random growth
-                idx = random.randint(0, len(frontier) - 1)
+            region_sizes[region_id] += 1
             
+        if hard_mode:
+            # PHASE 1: Forced Survival Expansion
+            # Make every region grab up to 2 random neighbors immediately to prevent 1-cell traps
+            for region_id, (r, c) in enumerate(stars):
+                neighbors = []
+                for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                    nr, nc = r + dr, c + dc
+                    if 0 <= nr < self.size and 0 <= nc < self.size and regions[nr][nc] == -1:
+                        neighbors.append((nr, nc))
+                
+                random.shuffle(neighbors)
+                for nr, nc in neighbors[:2]:
+                    if regions[nr][nc] == -1: # Double check it wasn't just claimed
+                        regions[nr][nc] = region_id
+                        region_sizes[region_id] += 1
+
+        # PHASE 2: Populate the frontier with the edges of our new shapes
+        for r in range(self.size):
+            for c in range(self.size):
+                if regions[r][c] != -1:
+                    region_id = regions[r][c]
+                    for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                        nr, nc = r + dr, c + dc
+                        if 0 <= nr < self.size and 0 <= nc < self.size and regions[nr][nc] == -1:
+                            frontier.append((nr, nc, region_id))
+                            
+        # PHASE 3: Pure Random BFS for jagged, organic shapes
+        while frontier:
+            idx = random.randint(0, len(frontier) - 1)
             r, c, region_id = frontier.pop(idx)
             
             if regions[r][c] == -1:
@@ -87,10 +95,9 @@ class PuzzleGenerator:
                     if 0 <= nr < self.size and 0 <= nc < self.size and regions[nr][nc] == -1:
                         frontier.append((nr, nc, region_id))
                         
-        # STRICT REJECTION: If any region is 1 or 2 cells large, reject this layout entirely.
-        if hard_mode:
-            if any(size < 3 for size in region_sizes.values()):
-                return None
+        # STRICT REJECTION: Still enforce the minimum size rule
+        if hard_mode and any(size < 3 for size in region_sizes.values()):
+            return None
                 
         return regions
 

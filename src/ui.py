@@ -8,19 +8,17 @@ from core.generator import PuzzleGenerator
 class GameUI:
     def __init__(self):
         pygame.init()
-
-        # New Animation Event Timer (Fires every 40ms)
+        
         self.ANIMATE_EVENT = pygame.USEREVENT + 1
-        pygame.time.set_timer(self.ANIMATE_EVENT, 40) 
-
-        self.cell_size = 60
-        self.margin = 20
+        pygame.time.set_timer(self.ANIMATE_EVENT, 40)
+        
         self.top_bar = 70  # Space at the top for the timer
         
-        # Initial Main Menu window size
+        # Start with default dimensions, but these will scale dynamically
         self.width = 600
         self.height = 600
-        self.screen = pygame.display.set_mode((self.width, self.height))
+
+        self.screen = pygame.display.set_mode((self.width, self.height), pygame.RESIZABLE)
         pygame.display.set_caption("Starstruck")
         
         self.colors = [
@@ -36,25 +34,44 @@ class GameUI:
         self.font_large = pygame.font.SysFont(None, 64)
         self.font_medium = pygame.font.SysFont(None, 36)
         
-        # New State Machine
         self.state = "MAIN_MENU"
         
         self.engine = None
         self.generator = None
         self.size = 0
         
-        # Timer variables
+        # Dynamic rendering variables
+        self.cell_size = 60
+        self.offset_x = 20
+        self.offset_y = 90
+        
         self.start_time = 0
         self.accumulated_time = 0
 
+    def _update_layout(self):
+        """Calculates dynamic cell sizes and centers the grid based on window size."""
+        if self.size > 0:
+            # Leave at least a 20px padding on the sides
+            available_w = self.width - 40
+            available_h = self.height - self.top_bar - 40
+            
+            # Safeguard so the game doesn't crash if the window gets tiny
+            self.cell_size = max(10, min(available_w // self.size, available_h // self.size))
+            
+            grid_w = self.size * self.cell_size
+            grid_h = self.size * self.cell_size
+            
+            # Center the grid mathematically
+            self.offset_x = (self.width - grid_w) // 2
+            self.offset_y = self.top_bar + (self.height - self.top_bar - grid_h) // 2
+
     def start_game(self, size: int):
-        """Initializes a new engine/generator and resizes the window."""
         self.size = size
-        self.width = self.size * self.cell_size + self.margin * 2
-        self.height = self.size * self.cell_size + self.margin * 2 + self.top_bar
-        self.screen = pygame.display.set_mode((self.width, self.height))
+        self.width = self.size * 60 + 40
+        self.height = self.size * 60 + 40 + self.top_bar
+        self.screen = pygame.display.set_mode((self.width, self.height), pygame.RESIZABLE)
+        self._update_layout()
         
-        # Temporarily draw a loading screen since generation takes a second
         self.screen.fill(self.bg_color)
         load_text = self.font_large.render("Generating...", True, (255, 255, 255))
         self.screen.blit(load_text, load_text.get_rect(center=(self.width//2, self.height//2)))
@@ -69,19 +86,17 @@ class GameUI:
         self.state = "PLAYING"
 
     def return_to_menu(self):
-        """Resets the window back to the main menu dimensions."""
         self.state = "MAIN_MENU"
+        self.size = 0
         self.width = 600
         self.height = 600
-        self.screen = pygame.display.set_mode((self.width, self.height))
+        self.screen = pygame.display.set_mode((self.width, self.height), pygame.RESIZABLE)
 
     def get_time_string(self) -> str:
-        """Calculates formatted MM:SS time, accounting for pauses."""
         if self.state == "PLAYING":
             total_ms = self.accumulated_time + (pygame.time.get_ticks() - self.start_time)
         else:
             total_ms = self.accumulated_time
-            
         seconds = total_ms // 1000
         return f"{seconds // 60:02}:{seconds % 60:02}"
 
@@ -114,7 +129,6 @@ class GameUI:
     def draw_grid(self):
         self.screen.fill(self.bg_color)
         
-        # Draw Timer
         time_surf = self.font_large.render(self.get_time_string(), True, (255, 255, 255))
         self.screen.blit(time_surf, time_surf.get_rect(center=(self.width // 2, self.top_bar // 2 + 10)))
         
@@ -122,8 +136,8 @@ class GameUI:
         
         for r in range(self.size):
             for c in range(self.size):
-                x = self.margin + c * self.cell_size
-                y = self.top_bar + self.margin + r * self.cell_size
+                x = self.offset_x + c * self.cell_size
+                y = self.offset_y + r * self.cell_size
                 reg_id = self.engine.regions[r][c]
                 color = self.colors[reg_id % len(self.colors)]
                 
@@ -144,8 +158,8 @@ class GameUI:
     def draw_borders(self):
         for r in range(self.size):
             for c in range(self.size):
-                x = self.margin + c * self.cell_size
-                y = self.top_bar + self.margin + r * self.cell_size
+                x = self.offset_x + c * self.cell_size
+                y = self.offset_y + r * self.cell_size
                 reg = self.engine.regions[r][c]
                 
                 if c < self.size - 1 and self.engine.regions[r][c+1] != reg:
@@ -153,7 +167,7 @@ class GameUI:
                 if r < self.size - 1 and self.engine.regions[r+1][c] != reg:
                     pygame.draw.line(self.screen, self.line_color, (x, y + self.cell_size), (x + self.cell_size, y + self.cell_size), 4)
                 
-        pygame.draw.rect(self.screen, self.line_color, (self.margin, self.top_bar + self.margin, self.size * self.cell_size, self.size * self.cell_size), 4)
+        pygame.draw.rect(self.screen, self.line_color, (self.offset_x, self.offset_y, self.size * self.cell_size, self.size * self.cell_size), 4)
 
     def draw_menu_overlay(self, title, options):
         overlay = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
@@ -186,21 +200,26 @@ class GameUI:
         running = True
         
         while running:
-            # 1. INPUT PHASE
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
+                    
+                # --- HANDLE WINDOW RESIZING ---
+                elif event.type == pygame.VIDEORESIZE:
+                    self.width, self.height = event.w, event.h
+                    self.screen = pygame.display.set_mode((self.width, self.height), pygame.RESIZABLE)
+                    self._update_layout()
                 
                 elif event.type == self.ANIMATE_EVENT: 
                     if self.state == "PLAYING" and self.engine and self.engine.animation_queue:
                         self.engine.process_animation_step()
-                                        
-                # --- KEYBOARD CONTROLS ---
+                
                 elif event.type == pygame.KEYDOWN:
                     if self.state == "MAIN_MENU":
-                        if event.key == pygame.K_1:
+                        # Support top row and numpad numbers
+                        if event.key in (pygame.K_1, pygame.K_KP1):
                             self.start_game(8)
-                        elif event.key == pygame.K_2:
+                        elif event.key in (pygame.K_2, pygame.K_KP2):
                             self.start_game(9)
                             
                     elif event.key == pygame.K_ESCAPE:
@@ -212,62 +231,58 @@ class GameUI:
                             self.state = "PLAYING"
                             
                     elif self.state == "PAUSED":
-                        if event.key == pygame.K_1: # Reset
+                        if event.key in (pygame.K_1, pygame.K_KP1):
                             self.engine.clear()
                             self.accumulated_time = 0
                             self.start_time = pygame.time.get_ticks()
                             self.state = "PLAYING"
-                        elif event.key == pygame.K_2: # New Puzzle
+                        elif event.key in (pygame.K_2, pygame.K_KP2):
                             self.start_game(self.size)
-                        elif event.key == pygame.K_3: # Main Menu
+                        elif event.key in (pygame.K_3, pygame.K_KP3):
                             self.return_to_menu()
                             
                     elif self.state == "WON":
-                        if event.key == pygame.K_1: # Export
+                        if event.key in (pygame.K_1, pygame.K_KP1):
                             self.export_images()
-                        elif event.key == pygame.K_2: # Play Again
+                        elif event.key in (pygame.K_2, pygame.K_KP2):
                             self.engine.clear()
                             self.accumulated_time = 0
                             self.start_time = pygame.time.get_ticks()
                             self.state = "PLAYING"
-                        elif event.key == pygame.K_3: # New Puzzle
+                        elif event.key in (pygame.K_3, pygame.K_KP3):
                             self.start_game(self.size)
-                        elif event.key == pygame.K_4: # Main Menu
+                        elif event.key in (pygame.K_4, pygame.K_KP4):
                             self.return_to_menu()
 
-                # --- MOUSE CLICK CONTROLS ---
                 elif event.type == pygame.MOUSEBUTTONDOWN and self.state == "PLAYING":
                     x, y = pygame.mouse.get_pos()
-                    c = (x - self.margin) // self.cell_size
-                    r = (y - self.margin - self.top_bar) // self.cell_size
+                    # Updated math using offsets
+                    c = (x - self.offset_x) // self.cell_size
+                    r = (y - self.offset_y) // self.cell_size
                     
                     if 0 <= r < self.size and 0 <= c < self.size:
                         if event.button == 1:
                             self.engine.toggle_star(r, c)
                         elif event.button == 3:
                             self.engine.toggle_mark(r, c)
-                            
                                                     
-                # --- MOUSE DRAG CONTROLS (Right Click to Mark) ---
                 elif event.type == pygame.MOUSEMOTION and self.state == "PLAYING":
-                    if pygame.mouse.get_pressed()[2]: # Index 2 is the Right Mouse Button
+                    if pygame.mouse.get_pressed()[2]: 
                         x, y = pygame.mouse.get_pos()
-                        c = (x - self.margin) // self.cell_size
-                        r = (y - self.margin - self.top_bar) // self.cell_size
+                        # Updated math using offsets!
+                        c = (x - self.offset_x) // self.cell_size
+                        r = (y - self.offset_y) // self.cell_size
                         
                         if 0 <= r < self.size and 0 <= c < self.size:
-                            # Only apply mark if the cell is completely empty (prevents flickering)
                             if self.engine.board[r][c] == CellState.EMPTY:
                                 self.engine.toggle_mark(r, c)
 
-            # 2. UPDATE PHASE (New global win check)
-            # Evaluate every frame, but only trigger a win if animations are completely finished
+            # GLOBAL WIN CHECK
             if self.state == "PLAYING" and self.engine:
                 if not self.engine.animation_queue and self.engine.is_solved():
                     self.accumulated_time += pygame.time.get_ticks() - self.start_time
                     self.state = "WON"
 
-            # 3. RENDER PHASE
             if self.state == "MAIN_MENU":
                 self.draw_main_menu()
             else:
