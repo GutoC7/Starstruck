@@ -1,6 +1,8 @@
 import pygame
 import sys
 import math
+import json
+import os
 from typing import List, Tuple
 from core.engine import StarstruckEngine, CellState
 from core.generator import PuzzleGenerator
@@ -12,12 +14,11 @@ class GameUI:
         self.ANIMATE_EVENT = pygame.USEREVENT + 1
         pygame.time.set_timer(self.ANIMATE_EVENT, 40)
         
-        self.top_bar = 70  # Space at the top for the timer
+        self.top_bar = 70 
         
-        # Start with default dimensions, but these will scale dynamically
+        # Initial launch size
         self.width = 600
         self.height = 600
-
         self.screen = pygame.display.set_mode((self.width, self.height), pygame.RESIZABLE)
         pygame.display.set_caption("Starstruck")
         
@@ -39,46 +40,71 @@ class GameUI:
         self.engine = None
         self.generator = None
         self.size = 0
+        self.current_puzzle_id = None # Tracks if you are playing a saved level
         
-        # Dynamic rendering variables
         self.cell_size = 60
         self.offset_x = 20
         self.offset_y = 90
         
         self.start_time = 0
         self.accumulated_time = 0
+        
+        # Load pre-generated puzzles!
+        self.puzzles_db = []
+        self.load_puzzles()
+
+    def load_puzzles(self):
+        filepath = os.path.join(os.path.dirname(__file__), "puzzles.json")
+        if os.path.exists(filepath):
+            with open(filepath, "r") as f:
+                try:
+                    data = json.load(f)
+                    self.puzzles_db = data.get("puzzles", [])
+                except json.JSONDecodeError:
+                    self.puzzles_db = []
+
+    def save_progress(self):
+        """Marks the current pre-generated level as completed in the JSON file."""
+        if self.current_puzzle_id:
+            for p in self.puzzles_db:
+                if p["id"] == self.current_puzzle_id:
+                    p["completed"] = True
+                    break
+            
+            filepath = os.path.join(os.path.dirname(__file__), "puzzles.json")
+            with open(filepath, "w") as f:
+                json.dump({"puzzles": self.puzzles_db}, f, indent=4)
 
     def _update_layout(self):
-        """Calculates dynamic cell sizes and centers the grid based on window size."""
         if self.size > 0:
-            # Leave at least a 20px padding on the sides
             available_w = self.width - 40
             available_h = self.height - self.top_bar - 40
-            
-            # Safeguard so the game doesn't crash if the window gets tiny
             self.cell_size = max(10, min(available_w // self.size, available_h // self.size))
-            
             grid_w = self.size * self.cell_size
             grid_h = self.size * self.cell_size
-            
-            # Center the grid mathematically
             self.offset_x = (self.width - grid_w) // 2
             self.offset_y = self.top_bar + (self.height - self.top_bar - grid_h) // 2
 
-    def start_game(self, size: int):
+    def start_game(self, size: int, pregenerated_data=None):
         self.size = size
-        self.width = self.size * 60 + 40
-        self.height = self.size * 60 + 40 + self.top_bar
+        # No longer reset self.width or self.height here respecting user resizes
         self.screen = pygame.display.set_mode((self.width, self.height), pygame.RESIZABLE)
         self._update_layout()
         
         self.screen.fill(self.bg_color)
-        load_text = self.font_large.render("Generating...", True, (255, 255, 255))
+        load_text = self.font_large.render("Loading...", True, (255, 255, 255))
         self.screen.blit(load_text, load_text.get_rect(center=(self.width//2, self.height//2)))
         pygame.display.flip()
         
-        self.generator = PuzzleGenerator(size)
-        regions, _ = self.generator.generate()
+        # If loading from JSON skip the generator entirely
+        if pregenerated_data:
+            regions = pregenerated_data["regions"]
+            self.current_puzzle_id = pregenerated_data["id"]
+        else:
+            self.generator = PuzzleGenerator(size)
+            regions, _ = self.generator.generate()
+            self.current_puzzle_id = None
+            
         self.engine = StarstruckEngine(size, regions)
         
         self.accumulated_time = 0
@@ -88,8 +114,8 @@ class GameUI:
     def return_to_menu(self):
         self.state = "MAIN_MENU"
         self.size = 0
-        self.width = 600
-        self.height = 600
+        self.current_puzzle_id = None
+        # No longer reset the window size here
         self.screen = pygame.display.set_mode((self.width, self.height), pygame.RESIZABLE)
 
     def get_time_string(self) -> str:
@@ -118,19 +144,60 @@ class GameUI:
     def draw_main_menu(self):
         self.screen.fill(self.bg_color)
         title = self.font_title.render("STARSTRUCK", True, (255, 255, 255))
-        self.screen.blit(title, title.get_rect(center=(self.width // 2, self.height // 3)))
+        self.screen.blit(title, title.get_rect(center=(self.width // 2, self.height // 3 - 50)))
         
-        opt1 = self.font_medium.render("[1] Play Easy (8x8)", True, (200, 200, 200))
-        self.screen.blit(opt1, opt1.get_rect(center=(self.width // 2, self.height // 2)))
+        opt1 = self.font_medium.render("[1] Generate Easy (8x8)", True, (200, 200, 200))
+        self.screen.blit(opt1, opt1.get_rect(center=(self.width // 2, self.height // 2 - 20)))
         
-        opt2 = self.font_medium.render("[2] Play Hard (9x9)", True, (200, 200, 200))
-        self.screen.blit(opt2, opt2.get_rect(center=(self.width // 2, self.height // 2 + 50)))
+        opt2 = self.font_medium.render("[2] Generate Hard (9x9)", True, (200, 200, 200))
+        self.screen.blit(opt2, opt2.get_rect(center=(self.width // 2, self.height // 2 + 30)))
+        
+        opt3 = self.font_medium.render("[3] Play Pre-Generated Levels", True, (145, 178, 122))
+        self.screen.blit(opt3, opt3.get_rect(center=(self.width // 2, self.height // 2 + 80)))
+
+    def draw_level_select(self):
+        self.screen.fill(self.bg_color)
+        title = self.font_large.render("SELECT LEVEL", True, (255, 255, 255))
+        self.screen.blit(title, title.get_rect(center=(self.width // 2, 60)))
+        
+        if not self.puzzles_db:
+            err = self.font_medium.render("No puzzles found in puzzles.json!", True, self.error_color)
+            self.screen.blit(err, err.get_rect(center=(self.width // 2, self.height // 2)))
+        else:
+            cols = 5
+            box_size = 60
+            padding = 15
+            # Center the grid of boxes horizontally
+            start_x = (self.width - (cols * box_size + (cols - 1) * padding)) // 2
+            start_y = 130
+            
+            for i, puzzle in enumerate(self.puzzles_db):
+                row = i // cols
+                col = i % cols
+                x = start_x + col * (box_size + padding)
+                y = start_y + row * (box_size + padding)
+                
+                # Green if completed, blue if unplayed
+                color = (145, 178, 122) if puzzle.get("completed") else (115, 147, 203)
+                pygame.draw.rect(self.screen, color, (x, y, box_size, box_size))
+                pygame.draw.rect(self.screen, self.line_color, (x, y, box_size, box_size), 2)
+                
+                text = self.font_medium.render(str(puzzle["id"]), True, (255, 255, 255))
+                self.screen.blit(text, text.get_rect(center=(x + box_size//2, y + box_size//2)))
+
+        back = self.font_medium.render("[ESC] Back to Menu", True, (200, 200, 200))
+        self.screen.blit(back, back.get_rect(center=(self.width // 2, self.height - 60)))
 
     def draw_grid(self):
         self.screen.fill(self.bg_color)
         
         time_surf = self.font_large.render(self.get_time_string(), True, (255, 255, 255))
         self.screen.blit(time_surf, time_surf.get_rect(center=(self.width // 2, self.top_bar // 2 + 10)))
+        
+        # Display current level ID if playing a pre-generated puzzle
+        if self.current_puzzle_id:
+            lvl_surf = self.font_medium.render(f"Level {self.current_puzzle_id}", True, (150, 150, 150))
+            self.screen.blit(lvl_surf, lvl_surf.get_rect(topleft=(20, 20)))
         
         conflicts = self.engine.get_conflicts()
         
@@ -204,7 +271,6 @@ class GameUI:
                 if event.type == pygame.QUIT:
                     running = False
                     
-                # --- HANDLE WINDOW RESIZING ---
                 elif event.type == pygame.VIDEORESIZE:
                     self.width, self.height = event.w, event.h
                     self.screen = pygame.display.set_mode((self.width, self.height), pygame.RESIZABLE)
@@ -216,14 +282,18 @@ class GameUI:
                 
                 elif event.type == pygame.KEYDOWN:
                     if self.state == "MAIN_MENU":
-                        # Support top row and numpad numbers
                         if event.key in (pygame.K_1, pygame.K_KP1):
                             self.start_game(8)
                         elif event.key in (pygame.K_2, pygame.K_KP2):
                             self.start_game(9)
+                        elif event.key in (pygame.K_3, pygame.K_KP3):
+                            self.load_puzzles() # Refresh list in case generation finished
+                            self.state = "LEVEL_SELECT"
                             
                     elif event.key == pygame.K_ESCAPE:
-                        if self.state == "PLAYING":
+                        if self.state == "LEVEL_SELECT":
+                            self.return_to_menu()
+                        elif self.state == "PLAYING":
                             self.accumulated_time += pygame.time.get_ticks() - self.start_time
                             self.state = "PAUSED"
                         elif self.state == "PAUSED":
@@ -237,7 +307,12 @@ class GameUI:
                             self.start_time = pygame.time.get_ticks()
                             self.state = "PLAYING"
                         elif event.key in (pygame.K_2, pygame.K_KP2):
-                            self.start_game(self.size)
+                            # Restart current level if pre-generated, or roll a new one
+                            if self.current_puzzle_id:
+                                puzzle = next(p for p in self.puzzles_db if p["id"] == self.current_puzzle_id)
+                                self.start_game(puzzle["size"], puzzle)
+                            else:
+                                self.start_game(self.size)
                         elif event.key in (pygame.K_3, pygame.K_KP3):
                             self.return_to_menu()
                             
@@ -250,26 +325,47 @@ class GameUI:
                             self.start_time = pygame.time.get_ticks()
                             self.state = "PLAYING"
                         elif event.key in (pygame.K_3, pygame.K_KP3):
-                            self.start_game(self.size)
+                            if self.current_puzzle_id:
+                                self.state = "LEVEL_SELECT"
+                            else:
+                                self.start_game(self.size)
                         elif event.key in (pygame.K_4, pygame.K_KP4):
                             self.return_to_menu()
 
-                elif event.type == pygame.MOUSEBUTTONDOWN and self.state == "PLAYING":
-                    x, y = pygame.mouse.get_pos()
-                    # Updated math using offsets
-                    c = (x - self.offset_x) // self.cell_size
-                    r = (y - self.offset_y) // self.cell_size
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    if self.state == "LEVEL_SELECT" and event.button == 1:
+                        x, y = pygame.mouse.get_pos()
+                        cols = 5
+                        box_size = 60
+                        padding = 15
+                        start_x = (self.width - (cols * box_size + (cols - 1) * padding)) // 2
+                        start_y = 130
+                        
+                        for i, puzzle in enumerate(self.puzzles_db):
+                            row = i // cols
+                            col = i % cols
+                            bx = start_x + col * (box_size + padding)
+                            by = start_y + row * (box_size + padding)
+                            
+                            # Check if the click was inside this level's box
+                            if bx <= x <= bx + box_size and by <= y <= by + box_size:
+                                self.start_game(puzzle["size"], puzzle)
+                                break
                     
-                    if 0 <= r < self.size and 0 <= c < self.size:
-                        if event.button == 1:
-                            self.engine.toggle_star(r, c)
-                        elif event.button == 3:
-                            self.engine.toggle_mark(r, c)
+                    elif self.state == "PLAYING":
+                        x, y = pygame.mouse.get_pos()
+                        c = (x - self.offset_x) // self.cell_size
+                        r = (y - self.offset_y) // self.cell_size
+                        
+                        if 0 <= r < self.size and 0 <= c < self.size:
+                            if event.button == 1:
+                                self.engine.toggle_star(r, c)
+                            elif event.button == 3:
+                                self.engine.toggle_mark(r, c)
                                                     
                 elif event.type == pygame.MOUSEMOTION and self.state == "PLAYING":
                     if pygame.mouse.get_pressed()[2]: 
                         x, y = pygame.mouse.get_pos()
-                        # Updated math using offsets!
                         c = (x - self.offset_x) // self.cell_size
                         r = (y - self.offset_y) // self.cell_size
                         
@@ -281,18 +377,21 @@ class GameUI:
             if self.state == "PLAYING" and self.engine:
                 if not self.engine.animation_queue and self.engine.is_solved():
                     self.accumulated_time += pygame.time.get_ticks() - self.start_time
+                    self.save_progress() # <--- Triggers the JSON write upon victory
                     self.state = "WON"
 
             if self.state == "MAIN_MENU":
                 self.draw_main_menu()
+            elif self.state == "LEVEL_SELECT":
+                self.draw_level_select()
             else:
                 self.draw_grid()
                 self.draw_borders()
                 
                 if self.state == "PAUSED":
-                    self.draw_menu_overlay("PAUSED", ["[1] Reset", "[2] New Puzzle", "[3] Main Menu", "[ESC] Resume"])
+                    self.draw_menu_overlay("PAUSED", ["[1] Reset", "[2] New/Restart Level", "[3] Main Menu", "[ESC] Resume"])
                 elif self.state == "WON":
-                    self.draw_menu_overlay("SOLVED!", ["[1] Export Images", "[2] Play Again", "[3] New Puzzle", "[4] Main Menu"])
+                    self.draw_menu_overlay("SOLVED!", ["[1] Export Images", "[2] Play Again", "[3] Next/New Level", "[4] Main Menu"])
                 
             pygame.display.flip()
             clock.tick(60)
