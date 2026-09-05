@@ -19,10 +19,11 @@ This project features a custom game engine, a Depth-First Search (DFS) backtrack
 ##  Installation & Setup
 
 1. **Clone the repository:**
-   ```bash
-   git clone [https://github.com/GutoC7/Starstruck.git](https://github.com/GutoC7/Starstruck.git)
-   cd Starstruck
+```bash
+git clone [https://github.com/GutoC7/Starstruck.git](https://github.com/GutoC7/Starstruck.git)
+cd Starstruck
 
+```
 
 
 2. **Install dependencies:**
