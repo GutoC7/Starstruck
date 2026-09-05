@@ -4,6 +4,9 @@ A complete, procedurally generated clone of the logic puzzle game "Starstruck" (
 
 This project features a custom game engine, a Depth-First Search (DFS) backtracking solver for mathematical uniqueness, and a multi-core batch generator to conquer the combinatorial explosion of complex graph topologies in larger grids.
 
+![Initial Puzzle](assets/puzzle_initial.png)
+![Solved Puzzle](assets/puzzle_solved.png)
+
 ##  Features
 
 * **Procedural Level Generation:** Uses randomized multi-source Breadth-First Search (BFS) to organically grow Tetris-like region boundaries.
