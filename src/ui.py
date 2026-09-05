@@ -96,16 +96,18 @@ class GameUI:
         self.screen.blit(load_text, load_text.get_rect(center=(self.width//2, self.height//2)))
         pygame.display.flip()
         
-        # If loading from JSON skip the generator entirely
+        # If loading from JSON, skip the generator entirely
         if pregenerated_data:
             regions = pregenerated_data["regions"]
+            solution = pregenerated_data["solution"]
             self.current_puzzle_id = pregenerated_data["id"]
         else:
             self.generator = PuzzleGenerator(size)
-            regions, _ = self.generator.generate()
+            regions, solution = self.generator.generate()
             self.current_puzzle_id = None
             
-        self.engine = StarstruckEngine(size, regions)
+        # Pass the solution to the engine for the hint system
+        self.engine = StarstruckEngine(size, regions, solution)
         
         self.accumulated_time = 0
         self.start_time = pygame.time.get_ticks()
@@ -222,6 +224,19 @@ class GameUI:
                 elif state == CellState.MARK:
                     self.draw_cross(self.screen, (50, 50, 50), center_x, center_y, self.cell_size)
 
+        # Add these at the end of draw_grid()
+        # Draw Undo Button
+        self.undo_btn = pygame.Rect(self.offset_x, 20, 80, 35)
+        pygame.draw.rect(self.screen, (80, 90, 110), self.undo_btn, border_radius=5)
+        undo_text = self.font_medium.render("Undo", True, (255, 255, 255))
+        self.screen.blit(undo_text, undo_text.get_rect(center=self.undo_btn.center))
+        
+        # Draw Hint Button
+        self.hint_btn = pygame.Rect(self.offset_x + (self.size * self.cell_size) - 80, 20, 80, 35)
+        pygame.draw.rect(self.screen, (100, 140, 110), self.hint_btn, border_radius=5)
+        hint_text = self.font_medium.render("Hint", True, (255, 255, 255))
+        self.screen.blit(hint_text, hint_text.get_rect(center=self.hint_btn.center))
+
     def draw_borders(self):
         for r in range(self.size):
             for c in range(self.size):
@@ -279,8 +294,17 @@ class GameUI:
                 elif event.type == self.ANIMATE_EVENT: 
                     if self.state == "PLAYING" and self.engine and self.engine.animation_queue:
                         self.engine.process_animation_step()
-                
+
                 elif event.type == pygame.KEYDOWN:
+                    # 1. Handle PLAYING state hotkeys
+                    if self.state == "PLAYING":
+                        mods = pygame.key.get_mods()
+                        if event.key == pygame.K_z and (mods & pygame.KMOD_CTRL or mods & pygame.KMOD_META):
+                            self.engine.undo()
+                        elif event.key == pygame.K_h:
+                            self.engine.get_hint()
+                            
+                    # 2. Handle MAIN_MENU state inputs
                     if self.state == "MAIN_MENU":
                         if event.key in (pygame.K_1, pygame.K_KP1):
                             self.start_game(8)
@@ -290,6 +314,7 @@ class GameUI:
                             self.load_puzzles() # Refresh list in case generation finished
                             self.state = "LEVEL_SELECT"
                             
+                    # 3. Handle ESCAPE key across states
                     elif event.key == pygame.K_ESCAPE:
                         if self.state == "LEVEL_SELECT":
                             self.return_to_menu()
@@ -300,6 +325,7 @@ class GameUI:
                             self.start_time = pygame.time.get_ticks()
                             self.state = "PLAYING"
                             
+                    # 4. Handle PAUSED state inputs
                     elif self.state == "PAUSED":
                         if event.key in (pygame.K_1, pygame.K_KP1):
                             self.engine.clear()
@@ -307,7 +333,6 @@ class GameUI:
                             self.start_time = pygame.time.get_ticks()
                             self.state = "PLAYING"
                         elif event.key in (pygame.K_2, pygame.K_KP2):
-                            # Restart current level if pre-generated, or roll a new one
                             if self.current_puzzle_id:
                                 puzzle = next(p for p in self.puzzles_db if p["id"] == self.current_puzzle_id)
                                 self.start_game(puzzle["size"], puzzle)
@@ -316,6 +341,7 @@ class GameUI:
                         elif event.key in (pygame.K_3, pygame.K_KP3):
                             self.return_to_menu()
                             
+                    # 5. Handle WON state inputs
                     elif self.state == "WON":
                         if event.key in (pygame.K_1, pygame.K_KP1):
                             self.export_images()
@@ -353,15 +379,22 @@ class GameUI:
                                 break
                     
                     elif self.state == "PLAYING":
-                        x, y = pygame.mouse.get_pos()
-                        c = (x - self.offset_x) // self.cell_size
-                        r = (y - self.offset_y) // self.cell_size
-                        
-                        if 0 <= r < self.size and 0 <= c < self.size:
-                            if event.button == 1:
-                                self.engine.toggle_star(r, c)
-                            elif event.button == 3:
-                                self.engine.toggle_mark(r, c)
+                        # Check if clicking the UI buttons first
+                        if event.button == 1 and hasattr(self, 'undo_btn') and self.undo_btn.collidepoint(event.pos):
+                            self.engine.undo()
+                        elif event.button == 1 and hasattr(self, 'hint_btn') and self.hint_btn.collidepoint(event.pos):
+                            self.engine.get_hint()
+                        else:
+                            # Normal grid clicking
+                            x, y = event.pos
+                            c = (x - self.offset_x) // self.cell_size
+                            r = (y - self.offset_y) // self.cell_size
+                            
+                            if 0 <= r < self.size and 0 <= c < self.size:
+                                if event.button == 1:
+                                    self.engine.toggle_star(r, c)
+                                elif event.button == 3:
+                                    self.engine.toggle_mark(r, c)
                                                     
                 elif event.type == pygame.MOUSEMOTION and self.state == "PLAYING":
                     if pygame.mouse.get_pressed()[2]: 

@@ -7,53 +7,94 @@ class CellState(IntEnum):
     MARK = 2
 
 class StarstruckEngine:
-    def __init__(self, size: int, regions: List[List[int]]):
+    # Now accepts the pre-calculated solution
+    def __init__(self, size: int, regions: List[List[int]], solution: List[Tuple[int, int]] = None):
         self.size = size
         self.regions = regions
+        
+        # Convert solution to a set for O(1) hash map lookups
+        self.solution = set(tuple(s) for s in solution) if solution else set()
+        
         self.board = [[CellState.EMPTY for _ in range(size)] for _ in range(size)]
         self.stars: Set[Tuple[int, int]] = set()
-        
-        # New: Queue to hold groups of cells to mark, ordered by distance
         self.animation_queue: List[List[Tuple[int, int]]] = []
+        self.action_stack: List[Tuple[List[List[CellState]], Set[Tuple[int, int]]]] = []
 
     def clear(self):
         self.board = [[CellState.EMPTY for _ in range(self.size)] for _ in range(self.size)]
         self.stars.clear()
         self.animation_queue.clear()
+        self.action_stack.clear()
+
+    def push_state(self):
+        board_copy = [row[:] for row in self.board]
+        stars_copy = set(self.stars)
+        self.action_stack.append((board_copy, stars_copy))
+
+    def undo(self):
+        if self.action_stack:
+            last_board, last_stars = self.action_stack.pop()
+            self.board = last_board
+            self.stars = last_stars
+            self.animation_queue.clear()
+
+    def get_hint(self):
+        """O(1) hint system using the known mathematical solution."""
+        if not self.solution:
+            return
+            
+        self.push_state()
+        
+        # 1. Correct a mistake if the player made one
+        wrong_stars = self.stars - self.solution
+        if wrong_stars:
+            r, c = next(iter(wrong_stars))
+            self.board[r][c] = CellState.MARK  # Auto-cross out the mistake
+            self.stars.remove((r, c))
+            return
+            
+        # 2. If no mistakes, reveal one correct star
+        missing_stars = self.solution - self.stars
+        if missing_stars:
+            r, c = next(iter(missing_stars))
+            self.board[r][c] = CellState.STAR
+            self.stars.add((r, c))
+            self._auto_mark(r, c)
 
     def _auto_mark(self, r: int, c: int):
-        """Calculates marks and queues them sequentially based on distance."""
         pending_marks = {}
+        placed_region = self.regions[r][c]
         
         for i in range(self.size):
-            # Row expansion
             if self.board[r][i] == CellState.EMPTY:
                 dist = abs(c - i)
                 if dist not in pending_marks: pending_marks[dist] = []
                 pending_marks[dist].append((r, i))
             
-            # Column expansion
             if self.board[i][c] == CellState.EMPTY:
                 dist = abs(r - i)
                 if dist not in pending_marks: pending_marks[dist] = []
                 pending_marks[dist].append((i, c))
                 
-        # 8-way Adjacency (Force into distance 1)
-        for dr in [-1, 0, 1]:
-            for dc in [-1, 0, 1]:
-                nr, nc = r + dr, c + dc
-                if 0 <= nr < self.size and 0 <= nc < self.size:
-                    if self.board[nr][nc] == CellState.EMPTY:
-                        if 1 not in pending_marks: pending_marks[1] = []
-                        if (nr, nc) not in pending_marks[1]:
-                            pending_marks[1].append((nr, nc))
+        for nr in range(self.size):
+            for nc in range(self.size):
+                if self.board[nr][nc] == CellState.EMPTY:
+                    is_adjacent = abs(nr - r) <= 1 and abs(nc - c) <= 1
+                    is_same_region = self.regions[nr][nc] == placed_region
+                    
+                    if is_adjacent or is_same_region:
+                        dist = abs(nr - r) + abs(nc - c)
+                        if is_adjacent or dist == 0: 
+                            dist = 1
                             
-        # Push to the animation queue sorted by distance
+                        if dist not in pending_marks: pending_marks[dist] = []
+                        if (nr, nc) not in pending_marks[dist]:
+                            pending_marks[dist].append((nr, nc))
+                            
         for d in sorted(pending_marks.keys()):
             self.animation_queue.append(pending_marks[d])
 
     def process_animation_step(self):
-        """Pops the next distance group and marks them on the board."""
         if self.animation_queue:
             step_cells = self.animation_queue.pop(0)
             for r, c in step_cells:
@@ -61,6 +102,7 @@ class StarstruckEngine:
                     self.board[r][c] = CellState.MARK
 
     def toggle_star(self, r: int, c: int):
+        self.push_state()
         if self.board[r][c] == CellState.STAR:
             self.board[r][c] = CellState.EMPTY
             self.stars.remove((r, c))
@@ -70,6 +112,7 @@ class StarstruckEngine:
             self._auto_mark(r, c)
 
     def toggle_mark(self, r: int, c: int):
+        self.push_state()
         if self.board[r][c] == CellState.MARK:
             self.board[r][c] = CellState.EMPTY
         elif self.board[r][c] == CellState.EMPTY:
