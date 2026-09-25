@@ -6,9 +6,11 @@ import os
 from typing import List, Tuple
 from core.engine import StarstruckEngine, CellState
 from core.generator import PuzzleGenerator
+from core.audio import AudioManager
 
 class GameUI:
     def __init__(self):
+        pygame.mixer.pre_init(44100, -16, 2, 512)
         pygame.init()
         
         self.ANIMATE_EVENT = pygame.USEREVENT + 1
@@ -48,34 +50,32 @@ class GameUI:
         self.start_time = 0
         self.accumulated_time = 0
         
-        # --- NEW: CRT Effect Variables ---
         self.crt_enabled = False
         self.crt_overlay = None
-        self.crt_roll_y = 0          # Tracks the vertical position of the bar
-        self.roll_surface = None     # Holds the pre-rendered gradient
+        self.crt_roll_y = 0          
+        self.roll_surface = None     
         self._generate_crt_overlay()
         
         self.puzzles_db = []
+        self.current_page = 0
+        self.puzzles_per_page = 25
         self.load_puzzles()
+        
+        # Audio Manager instantiated cleanly inside __init__
+        self.audio = AudioManager()
 
     def _generate_crt_overlay(self):
-        """Pre-calculates the scanlines, vignette, and the rolling V-Sync bar."""
         self.crt_overlay = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
-        
-        # 1. Draw Interlaced Scanlines
         for y in range(0, self.height, 3):
             pygame.draw.line(self.crt_overlay, (0, 0, 0, 50), (0, y), (self.width, y))
             
-        # 2. Draw a stepped, boxy vignette for screen edges
         pygame.draw.rect(self.crt_overlay, (0, 0, 0, 120), (0, 0, self.width, self.height), 12)
         pygame.draw.rect(self.crt_overlay, (0, 0, 0, 80), (12, 12, self.width-24, self.height-24), 12)
         pygame.draw.rect(self.crt_overlay, (0, 0, 0, 40), (24, 24, self.width-48, self.height-48), 12)
 
-        # 3. Generate the V-Sync Roll Bar (using a Sine wave for a smooth gradient)
-        roll_height = max(100, int(self.height * 0.15)) # 15% of the screen height
+        roll_height = max(100, int(self.height * 0.15)) 
         self.roll_surface = pygame.Surface((self.width, roll_height), pygame.SRCALPHA)
         for y in range(roll_height):
-            # Creates a soft gradient that is darkest in the exact center of the bar
             alpha = int(35 * math.sin(math.pi * (y / roll_height)))
             pygame.draw.line(self.roll_surface, (0, 0, 0, alpha), (0, y), (self.width, y))
 
@@ -176,7 +176,6 @@ class GameUI:
         opt3 = self.font_medium.render("[3] Play Pre-Generated Levels", True, (145, 178, 122))
         self.screen.blit(opt3, opt3.get_rect(center=(self.width // 2, self.height // 2 + 80)))
         
-        # Show CRT Toggle instruction
         crt_text = self.font_medium.render(f"[C] CRT Mode: {'ON' if self.crt_enabled else 'OFF'}", True, (150, 150, 150))
         self.screen.blit(crt_text, crt_text.get_rect(center=(self.width // 2, self.height - 40)))
 
@@ -195,7 +194,11 @@ class GameUI:
             start_x = (self.width - (cols * box_size + (cols - 1) * padding)) // 2
             start_y = 130
             
-            for i, puzzle in enumerate(self.puzzles_db):
+            start_idx = self.current_page * self.puzzles_per_page
+            end_idx = start_idx + self.puzzles_per_page
+            page_puzzles = self.puzzles_db[start_idx:end_idx]
+            
+            for i, puzzle in enumerate(page_puzzles):
                 row = i // cols
                 col = i % cols
                 x = start_x + col * (box_size + padding)
@@ -208,8 +211,27 @@ class GameUI:
                 text = self.font_medium.render(str(puzzle["id"]), True, (255, 255, 255))
                 self.screen.blit(text, text.get_rect(center=(x + box_size//2, y + box_size//2)))
 
+            # Pagination Arrows
+            arrow_y = start_y + 5 * (box_size + padding) + 20
+            
+            if self.current_page > 0:
+                self.btn_prev = pygame.Rect(self.width // 2 - 100, arrow_y, 60, 40)
+                pygame.draw.rect(self.screen, (80, 90, 110), self.btn_prev, border_radius=5)
+                prev_text = self.font_medium.render("<", True, (255, 255, 255))
+                self.screen.blit(prev_text, prev_text.get_rect(center=self.btn_prev.center))
+            else:
+                self.btn_prev = None
+                
+            if end_idx < len(self.puzzles_db):
+                self.btn_next = pygame.Rect(self.width // 2 + 40, arrow_y, 60, 40)
+                pygame.draw.rect(self.screen, (80, 90, 110), self.btn_next, border_radius=5)
+                next_text = self.font_medium.render(">", True, (255, 255, 255))
+                self.screen.blit(next_text, next_text.get_rect(center=self.btn_next.center))
+            else:
+                self.btn_next = None
+
         back = self.font_medium.render("[ESC] Back to Menu", True, (200, 200, 200))
-        self.screen.blit(back, back.get_rect(center=(self.width // 2, self.height - 60)))
+        self.screen.blit(back, back.get_rect(center=(self.width // 2, self.height - 40)))
 
     def draw_grid(self):
         self.screen.fill(self.bg_color)
@@ -280,6 +302,20 @@ class GameUI:
             opt_surf = self.font_medium.render(text, True, (200, 200, 200))
             self.screen.blit(opt_surf, opt_surf.get_rect(center=(self.width // 2, self.height // 2 + i * 40)))
 
+    def export_images(self):
+        self.draw_grid()
+        self.draw_borders()
+        pygame.image.save(self.screen, "puzzle_solved.png")
+        
+        temp_board = [row[:] for row in self.engine.board]
+        self.engine.clear()
+        self.draw_grid()
+        self.draw_borders()
+        pygame.image.save(self.screen, "puzzle_initial.png")
+        
+        self.engine.board = temp_board
+        print("Exported 'puzzle_initial.png' and 'puzzle_solved.png'!")
+
     def run(self):
         clock = pygame.time.Clock()
         running = True
@@ -293,14 +329,13 @@ class GameUI:
                     self.width, self.height = event.w, event.h
                     self.screen = pygame.display.set_mode((self.width, self.height), pygame.RESIZABLE)
                     self._update_layout()
-                    self._generate_crt_overlay() # Regenerate scanlines to fit new window!
+                    self._generate_crt_overlay()
                 
                 elif event.type == self.ANIMATE_EVENT: 
                     if self.state == "PLAYING" and self.engine and self.engine.animation_queue:
                         self.engine.process_animation_step()
 
                 elif event.type == pygame.KEYDOWN:
-                    # CRT Global Toggle
                     if event.key == pygame.K_c:
                         self.crt_enabled = not self.crt_enabled
                         
@@ -311,13 +346,20 @@ class GameUI:
                         elif event.key == pygame.K_h:
                             self.engine.get_hint()
                             
+                    elif self.state == "LEVEL_SELECT":
+                        if event.key == pygame.K_LEFT and self.current_page > 0:
+                            self.current_page -= 1
+                        elif event.key == pygame.K_RIGHT and (self.current_page + 1) * self.puzzles_per_page < len(self.puzzles_db):
+                            self.current_page += 1
+                            
                     elif self.state == "MAIN_MENU":
                         if event.key in (pygame.K_1, pygame.K_KP1):
                             self.start_game(8)
                         elif event.key in (pygame.K_2, pygame.K_KP2):
                             self.start_game(9)
                         elif event.key in (pygame.K_3, pygame.K_KP3):
-                            self.load_puzzles() 
+                            self.load_puzzles()
+                            self.current_page = 0
                             self.state = "LEVEL_SELECT"
                             
                     elif event.key == pygame.K_ESCAPE:
@@ -363,6 +405,13 @@ class GameUI:
 
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     if self.state == "LEVEL_SELECT" and event.button == 1:
+                        # Handle Pagination Arrows
+                        if self.btn_prev and self.btn_prev.collidepoint(event.pos):
+                            self.current_page -= 1
+                        elif self.btn_next and self.btn_next.collidepoint(event.pos):
+                            self.current_page += 1
+                            
+                        # Handle Level Selection
                         x, y = pygame.mouse.get_pos()
                         cols = 5
                         box_size = 60
@@ -370,7 +419,10 @@ class GameUI:
                         start_x = (self.width - (cols * box_size + (cols - 1) * padding)) // 2
                         start_y = 130
                         
-                        for i, puzzle in enumerate(self.puzzles_db):
+                        start_idx = self.current_page * self.puzzles_per_page
+                        page_puzzles = self.puzzles_db[start_idx : start_idx + self.puzzles_per_page]
+                        
+                        for i, puzzle in enumerate(page_puzzles):
                             row = i // cols
                             col = i % cols
                             bx = start_x + col * (box_size + padding)
@@ -393,8 +445,10 @@ class GameUI:
                             if 0 <= r < self.size and 0 <= c < self.size:
                                 if event.button == 1:
                                     self.engine.toggle_star(r, c)
+                                    if hasattr(self, 'audio'): self.audio.play_star()
                                 elif event.button == 3:
                                     self.engine.toggle_mark(r, c)
+                                    if hasattr(self, 'audio'): self.audio.play_mark()
                                                     
                 elif event.type == pygame.MOUSEMOTION and self.state == "PLAYING":
                     if pygame.mouse.get_pressed()[2]: 
@@ -405,14 +459,15 @@ class GameUI:
                         if 0 <= r < self.size and 0 <= c < self.size:
                             if self.engine.board[r][c] == CellState.EMPTY:
                                 self.engine.toggle_mark(r, c)
+                                if hasattr(self, 'audio'): self.audio.play_mark()
 
             if self.state == "PLAYING" and self.engine:
                 if not self.engine.animation_queue and self.engine.is_solved():
                     self.accumulated_time += pygame.time.get_ticks() - self.start_time
                     self.save_progress() 
                     self.state = "WON"
+                    if hasattr(self, 'audio'): self.audio.play_win()
 
-            # --- RENDERING PIPELINE ---
             if self.state == "MAIN_MENU":
                 self.draw_main_menu()
             elif self.state == "LEVEL_SELECT":
@@ -426,22 +481,16 @@ class GameUI:
                 elif self.state == "WON":
                     self.draw_menu_overlay("SOLVED!", ["[1] Export Images", "[2] Play Again", "[3] Next/New Level", "[4] Main Menu"])
                 
-            # --- CRT POST-PROCESSING ---
             if self.crt_enabled:
-                # 1. Phosphor ghosting
                 screen_copy = self.screen.copy()
                 screen_copy.set_alpha(70)
                 self.screen.blit(screen_copy, (2, 0))
                 self.screen.blit(screen_copy, (-2, 0))
                 
-                # 2. Apply static scanlines and vignette
                 self.screen.blit(self.crt_overlay, (0, 0))
-                
-                # 3. Apply moving V-Sync roll
                 self.screen.blit(self.roll_surface, (0, self.crt_roll_y))
-                self.crt_roll_y += 3  # Speed of the roll downward
+                self.crt_roll_y += 3
                 
-                # Reset the bar with a delay once it goes off-screen
                 if self.crt_roll_y > self.height + 400:
                     self.crt_roll_y = -self.roll_surface.get_height()
 
