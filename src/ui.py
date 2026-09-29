@@ -336,33 +336,12 @@ class GameUI:
                         self.engine.process_animation_step()
 
                 elif event.type == pygame.KEYDOWN:
+                    # 1. Global Keys
                     if event.key == pygame.K_c:
                         self.crt_enabled = not self.crt_enabled
                         
-                    if self.state == "PLAYING":
-                        mods = pygame.key.get_mods()
-                        if event.key == pygame.K_z and (mods & pygame.KMOD_CTRL or mods & pygame.KMOD_META):
-                            self.engine.undo()
-                        elif event.key == pygame.K_h:
-                            self.engine.get_hint()
-                            
-                    elif self.state == "LEVEL_SELECT":
-                        if event.key == pygame.K_LEFT and self.current_page > 0:
-                            self.current_page -= 1
-                        elif event.key == pygame.K_RIGHT and (self.current_page + 1) * self.puzzles_per_page < len(self.puzzles_db):
-                            self.current_page += 1
-                            
-                    elif self.state == "MAIN_MENU":
-                        if event.key in (pygame.K_1, pygame.K_KP1):
-                            self.start_game(8)
-                        elif event.key in (pygame.K_2, pygame.K_KP2):
-                            self.start_game(9)
-                        elif event.key in (pygame.K_3, pygame.K_KP3):
-                            self.load_puzzles()
-                            self.current_page = 0
-                            self.state = "LEVEL_SELECT"
-                            
-                    elif event.key == pygame.K_ESCAPE:
+                    # 2. Escape Key
+                    if event.key == pygame.K_ESCAPE:
                         if self.state == "LEVEL_SELECT":
                             self.return_to_menu()
                         elif self.state == "PLAYING":
@@ -372,36 +351,61 @@ class GameUI:
                             self.start_time = pygame.time.get_ticks()
                             self.state = "PLAYING"
                             
-                    elif self.state == "PAUSED":
-                        if event.key in (pygame.K_1, pygame.K_KP1):
-                            self.engine.clear()
-                            self.accumulated_time = 0
-                            self.start_time = pygame.time.get_ticks()
-                            self.state = "PLAYING"
-                        elif event.key in (pygame.K_2, pygame.K_KP2):
-                            if self.current_puzzle_id:
-                                puzzle = next(p for p in self.puzzles_db if p["id"] == self.current_puzzle_id)
-                                self.start_game(puzzle["size"], puzzle)
-                            else:
-                                self.start_game(self.size)
-                        elif event.key in (pygame.K_3, pygame.K_KP3):
-                            self.return_to_menu()
-                            
-                    elif self.state == "WON":
-                        if event.key in (pygame.K_1, pygame.K_KP1):
-                            self.export_images()
-                        elif event.key in (pygame.K_2, pygame.K_KP2):
-                            self.engine.clear()
-                            self.accumulated_time = 0
-                            self.start_time = pygame.time.get_ticks()
-                            self.state = "PLAYING"
-                        elif event.key in (pygame.K_3, pygame.K_KP3):
-                            if self.current_puzzle_id:
+                    # 3. State-Specific Keys
+                    else:
+                        if self.state == "PLAYING":
+                            mods = pygame.key.get_mods()
+                            if event.key == pygame.K_z and (mods & pygame.KMOD_CTRL or mods & pygame.KMOD_META):
+                                self.engine.undo()
+                            elif event.key == pygame.K_h:
+                                self.engine.get_hint()
+                                
+                        elif self.state == "LEVEL_SELECT":
+                            if event.key == pygame.K_LEFT and self.current_page > 0:
+                                self.current_page -= 1
+                            elif event.key == pygame.K_RIGHT and (self.current_page + 1) * self.puzzles_per_page < len(self.puzzles_db):
+                                self.current_page += 1
+                                
+                        elif self.state == "MAIN_MENU":
+                            if event.key in (pygame.K_1, pygame.K_KP1):
+                                self.start_game(8)
+                            elif event.key in (pygame.K_2, pygame.K_KP2):
+                                self.start_game(9)
+                            elif event.key in (pygame.K_3, pygame.K_KP3):
+                                self.load_puzzles()
+                                self.current_page = 0
                                 self.state = "LEVEL_SELECT"
-                            else:
-                                self.start_game(self.size)
-                        elif event.key in (pygame.K_4, pygame.K_KP4):
-                            self.return_to_menu()
+                                
+                        elif self.state == "PAUSED":
+                            if event.key in (pygame.K_1, pygame.K_KP1):
+                                self.engine.clear()
+                                self.accumulated_time = 0
+                                self.start_time = pygame.time.get_ticks()
+                                self.state = "PLAYING"
+                            elif event.key in (pygame.K_2, pygame.K_KP2):
+                                if self.current_puzzle_id:
+                                    puzzle = next(p for p in self.puzzles_db if p["id"] == self.current_puzzle_id)
+                                    self.start_game(puzzle["size"], puzzle)
+                                else:
+                                    self.start_game(self.size)
+                            elif event.key in (pygame.K_3, pygame.K_KP3):
+                                self.return_to_menu()
+                                
+                        elif self.state == "WON":
+                            if event.key in (pygame.K_1, pygame.K_KP1):
+                                self.export_images()
+                            elif event.key in (pygame.K_2, pygame.K_KP2):
+                                self.engine.clear()
+                                self.accumulated_time = 0
+                                self.start_time = pygame.time.get_ticks()
+                                self.state = "PLAYING"
+                            elif event.key in (pygame.K_3, pygame.K_KP3):
+                                if self.current_puzzle_id:
+                                    self.state = "LEVEL_SELECT"
+                                else:
+                                    self.start_game(self.size)
+                            elif event.key in (pygame.K_4, pygame.K_KP4):
+                                self.return_to_menu()
 
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     if self.state == "LEVEL_SELECT" and event.button == 1:
