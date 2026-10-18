@@ -58,4 +58,4 @@ def generate_batch(count: int = 50, size: int = 9, filename: str = "puzzles.json
 
 if __name__ == "__main__":
     # Fire up 20 puzzles to test the multi-core speed!
-    generate_batch(count=20, size=9)
+    generate_batch(count=50, size=9)
