@@ -57,11 +57,11 @@ class GameUI:
         self._generate_crt_overlay()
         
         self.puzzles_db = []
+        self.display_puzzles = [] # Dynamically filters the menu view
         self.current_page = 0
-        self.puzzles_per_page = 25
+        self.puzzles_per_page = 25 # Upgraded to 5x5 grid
         self.load_puzzles()
         
-        # Audio Manager instantiated cleanly inside __init__
         self.audio = AudioManager()
 
     def _generate_crt_overlay(self):
@@ -79,8 +79,8 @@ class GameUI:
             alpha = int(35 * math.sin(math.pi * (y / roll_height)))
             pygame.draw.line(self.roll_surface, (0, 0, 0, alpha), (0, y), (self.width, y))
 
-    def load_puzzles(self):
-        filepath = os.path.join(os.path.dirname(__file__), "puzzles.json")
+    def load_puzzles(self, filename="puzzles.json"):
+        filepath = os.path.join(os.path.dirname(__file__), filename)
         if os.path.exists(filepath):
             with open(filepath, "r") as f:
                 try:
@@ -88,6 +88,7 @@ class GameUI:
                     self.puzzles_db = data.get("puzzles", [])
                 except json.JSONDecodeError:
                     self.puzzles_db = []
+        self.display_puzzles = self.puzzles_db
 
     def save_progress(self):
         if self.current_puzzle_id:
@@ -167,25 +168,25 @@ class GameUI:
         title = self.font_title.render("STARSTRUCK", True, (255, 255, 255))
         self.screen.blit(title, title.get_rect(center=(self.width // 2, self.height // 3 - 50)))
         
-        opt1 = self.font_medium.render("[1] Generate Easy (8x8)", True, (200, 200, 200))
-        self.screen.blit(opt1, opt1.get_rect(center=(self.width // 2, self.height // 2 - 20)))
+        opt1 = self.font_medium.render("[1] Play Live Easy (8x8)", True, (200, 200, 200))
+        self.screen.blit(opt1, opt1.get_rect(center=(self.width // 2, self.height // 2 - 40)))
         
-        opt2 = self.font_medium.render("[2] Generate Hard (9x9)", True, (200, 200, 200))
-        self.screen.blit(opt2, opt2.get_rect(center=(self.width // 2, self.height // 2 + 30)))
+        opt2 = self.font_medium.render("[2] Play Pre-Generated Hard (9x9)", True, (200, 200, 200))
+        self.screen.blit(opt2, opt2.get_rect(center=(self.width // 2, self.height // 2 + 10)))
         
-        opt3 = self.font_medium.render("[3] Play Pre-Generated Levels", True, (145, 178, 122))
-        self.screen.blit(opt3, opt3.get_rect(center=(self.width // 2, self.height // 2 + 80)))
+        opt3 = self.font_medium.render("[3] Play Pre-Generated Expert (12x12)", True, (219, 132, 107))
+        self.screen.blit(opt3, opt3.get_rect(center=(self.width // 2, self.height // 2 + 60)))
         
         crt_text = self.font_medium.render(f"[C] CRT Mode: {'ON' if self.crt_enabled else 'OFF'}", True, (150, 150, 150))
-        self.screen.blit(crt_text, crt_text.get_rect(center=(self.width // 2, self.height - 40)))
+        self.screen.blit(crt_text, crt_text.get_rect(center=(self.width // 2, self.height - 20)))
 
     def draw_level_select(self):
         self.screen.fill(self.bg_color)
         title = self.font_large.render("SELECT LEVEL", True, (255, 255, 255))
         self.screen.blit(title, title.get_rect(center=(self.width // 2, 60)))
         
-        if not self.puzzles_db:
-            err = self.font_medium.render("No puzzles found in puzzles.json!", True, self.error_color)
+        if not self.display_puzzles:
+            err = self.font_medium.render("No puzzles found for this mode!", True, self.error_color)
             self.screen.blit(err, err.get_rect(center=(self.width // 2, self.height // 2)))
         else:
             cols = 5
@@ -195,8 +196,7 @@ class GameUI:
             start_y = 130
             
             start_idx = self.current_page * self.puzzles_per_page
-            end_idx = start_idx + self.puzzles_per_page
-            page_puzzles = self.puzzles_db[start_idx:end_idx]
+            page_puzzles = self.display_puzzles[start_idx : start_idx + self.puzzles_per_page]
             
             for i, puzzle in enumerate(page_puzzles):
                 row = i // cols
@@ -211,7 +211,7 @@ class GameUI:
                 text = self.font_medium.render(str(puzzle["id"]), True, (255, 255, 255))
                 self.screen.blit(text, text.get_rect(center=(x + box_size//2, y + box_size//2)))
 
-            # Pagination Arrows
+            # Pagination Arrows pushed down to accommodate 5 rows
             arrow_y = start_y + 5 * (box_size + padding) + 20
             
             if self.current_page > 0:
@@ -222,7 +222,7 @@ class GameUI:
             else:
                 self.btn_prev = None
                 
-            if end_idx < len(self.puzzles_db):
+            if start_idx + self.puzzles_per_page < len(self.display_puzzles):
                 self.btn_next = pygame.Rect(self.width // 2 + 40, arrow_y, 60, 40)
                 pygame.draw.rect(self.screen, (80, 90, 110), self.btn_next, border_radius=5)
                 next_text = self.font_medium.render(">", True, (255, 255, 255))
@@ -302,20 +302,6 @@ class GameUI:
             opt_surf = self.font_medium.render(text, True, (200, 200, 200))
             self.screen.blit(opt_surf, opt_surf.get_rect(center=(self.width // 2, self.height // 2 + i * 40)))
 
-    def export_images(self):
-        self.draw_grid()
-        self.draw_borders()
-        pygame.image.save(self.screen, "puzzle_solved.png")
-        
-        temp_board = [row[:] for row in self.engine.board]
-        self.engine.clear()
-        self.draw_grid()
-        self.draw_borders()
-        pygame.image.save(self.screen, "puzzle_initial.png")
-        
-        self.engine.board = temp_board
-        print("Exported 'puzzle_initial.png' and 'puzzle_solved.png'!")
-
     def run(self):
         clock = pygame.time.Clock()
         running = True
@@ -336,11 +322,9 @@ class GameUI:
                         self.engine.process_animation_step()
 
                 elif event.type == pygame.KEYDOWN:
-                    # 1. Global Keys
                     if event.key == pygame.K_c:
                         self.crt_enabled = not self.crt_enabled
                         
-                    # 2. Escape Key
                     if event.key == pygame.K_ESCAPE:
                         if self.state == "LEVEL_SELECT":
                             self.return_to_menu()
@@ -350,8 +334,6 @@ class GameUI:
                         elif self.state == "PAUSED":
                             self.start_time = pygame.time.get_ticks()
                             self.state = "PLAYING"
-                            
-                    # 3. State-Specific Keys
                     else:
                         if self.state == "PLAYING":
                             mods = pygame.key.get_mods()
@@ -363,16 +345,20 @@ class GameUI:
                         elif self.state == "LEVEL_SELECT":
                             if event.key == pygame.K_LEFT and self.current_page > 0:
                                 self.current_page -= 1
-                            elif event.key == pygame.K_RIGHT and (self.current_page + 1) * self.puzzles_per_page < len(self.puzzles_db):
+                            elif event.key == pygame.K_RIGHT and (self.current_page + 1) * self.puzzles_per_page < len(self.display_puzzles):
                                 self.current_page += 1
                                 
                         elif self.state == "MAIN_MENU":
                             if event.key in (pygame.K_1, pygame.K_KP1):
                                 self.start_game(8)
                             elif event.key in (pygame.K_2, pygame.K_KP2):
-                                self.start_game(9)
+                                # Load the standard 9x9 hard database
+                                self.load_puzzles("puzzles.json")
+                                self.current_page = 0
+                                self.state = "LEVEL_SELECT"
                             elif event.key in (pygame.K_3, pygame.K_KP3):
-                                self.load_puzzles()
+                                # Load the new 12x12 expert database
+                                self.load_puzzles("expert_puzzles.json")
                                 self.current_page = 0
                                 self.state = "LEVEL_SELECT"
                                 
@@ -409,13 +395,11 @@ class GameUI:
 
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     if self.state == "LEVEL_SELECT" and event.button == 1:
-                        # Handle Pagination Arrows
-                        if self.btn_prev and self.btn_prev.collidepoint(event.pos):
+                        if getattr(self, 'btn_prev', None) and self.btn_prev.collidepoint(event.pos):
                             self.current_page -= 1
-                        elif self.btn_next and self.btn_next.collidepoint(event.pos):
+                        elif getattr(self, 'btn_next', None) and self.btn_next.collidepoint(event.pos):
                             self.current_page += 1
                             
-                        # Handle Level Selection
                         x, y = pygame.mouse.get_pos()
                         cols = 5
                         box_size = 60
@@ -424,7 +408,7 @@ class GameUI:
                         start_y = 130
                         
                         start_idx = self.current_page * self.puzzles_per_page
-                        page_puzzles = self.puzzles_db[start_idx : start_idx + self.puzzles_per_page]
+                        page_puzzles = self.display_puzzles[start_idx : start_idx + self.puzzles_per_page]
                         
                         for i, puzzle in enumerate(page_puzzles):
                             row = i // cols
@@ -447,20 +431,25 @@ class GameUI:
                             r = (y - self.offset_y) // self.cell_size
                             
                             if 0 <= r < self.size and 0 <= c < self.size:
-                                if event.button == 1:
-                                    self.engine.toggle_star(r, c)
-                                    if hasattr(self, 'audio'): self.audio.play_star()
-                                elif event.button == 3:
-                                    self.engine.toggle_mark(r, c)
-                                    if hasattr(self, 'audio'): self.audio.play_mark()
+                                if event.button == 1: # Left click cycles states
+                                    self.engine.cycle_cell(r, c)
+                                    if hasattr(self, 'audio'): 
+                                        # Play sound based on the NEW state
+                                        state = self.engine.board[r][c]
+                                        if state == CellState.MARK:
+                                            self.audio.play_mark()
+                                        elif state == CellState.STAR:
+                                            self.audio.play_star()
                                                     
                 elif event.type == pygame.MOUSEMOTION and self.state == "PLAYING":
-                    if pygame.mouse.get_pressed()[2]: 
+                    # Allow Left-Click drag (0) or Right-Click drag (2)
+                    if pygame.mouse.get_pressed()[0] or pygame.mouse.get_pressed()[2]: 
                         x, y = pygame.mouse.get_pos()
                         c = (x - self.offset_x) // self.cell_size
                         r = (y - self.offset_y) // self.cell_size
                         
                         if 0 <= r < self.size and 0 <= c < self.size:
+                            # The drag function ONLY draws Xs on completely empty cells
                             if self.engine.board[r][c] == CellState.EMPTY:
                                 self.engine.toggle_mark(r, c)
                                 if hasattr(self, 'audio'): self.audio.play_mark()

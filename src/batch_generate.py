@@ -15,7 +15,8 @@ def generate_single_puzzle(size: int, task_id: int):
         "completed": False
     }
 
-def generate_batch(count: int = 50, size: int = 9, filename: str = "puzzles.json"):
+def generate_batch(count: int = 50, size: int = 9):
+    filename = "expert_puzzles.json" if size >= 12 else "puzzles.json"
     filepath = os.path.join(os.path.dirname(__file__), filename)
     puzzles = []
     
@@ -57,5 +58,4 @@ def generate_batch(count: int = 50, size: int = 9, filename: str = "puzzles.json
     print(f"\nDone! Generated {count} puzzles in {elapsed:.2f} seconds.")
 
 if __name__ == "__main__":
-    # Fire up 20 puzzles to test the multi-core speed!
-    generate_batch(count=50, size=9)
+    generate_batch(count=50, size=12)

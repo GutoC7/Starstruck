@@ -6,8 +6,17 @@ from .solver import StarBattleSolver
 class PuzzleGenerator:
     def __init__(self, size: int):
         self.size = size
-        self.min_region_size = 4 if size >= 9 else 2
-        self.max_region_size = 13 if size >= 9 else 12
+        
+        # Scale region constraints based on the total board area
+        if size >= 12:
+            self.min_region_size = 6
+            self.max_region_size = 20
+        elif size >= 9:
+            self.min_region_size = 4
+            self.max_region_size = 13
+        else:
+            self.min_region_size = 2
+            self.max_region_size = 12
 
     def _is_irreducible(self, stars: List[Tuple[int, int]]) -> bool:
         """
@@ -204,6 +213,28 @@ class PuzzleGenerator:
 
         return None
 
+    def _grow_regions_easy(self, stars: List[Tuple[int, int]]) -> List[List[int]]:
+        """Legacy random BFS for high-speed 8x8 generation."""
+        regions = [[-1 for _ in range(self.size)] for _ in range(self.size)]
+        frontier: List[Tuple[int, int, int]] = []
+        for region_id, (r, c) in enumerate(stars):
+            regions[r][c] = region_id
+            for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                nr, nc = r + dr, c + dc
+                if 0 <= nr < self.size and 0 <= nc < self.size:
+                    frontier.append((nr, nc, region_id))
+
+        while frontier:
+            idx = random.randint(0, len(frontier) - 1)
+            r, c, region_id = frontier.pop(idx)
+            if regions[r][c] == -1:
+                regions[r][c] = region_id
+                for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                    nr, nc = r + dr, c + dc
+                    if 0 <= nr < self.size and 0 <= nc < self.size and regions[nr][nc] == -1:
+                        frontier.append((nr, nc, region_id))
+        return regions
+
     def generate(self) -> Tuple[List[List[int]], List[Tuple[int, int]]]:
         attempts = 0
         hard_mode = self.size >= 9
@@ -211,17 +242,21 @@ class PuzzleGenerator:
         while True:
             attempts += 1
             stars = self._generate_seed_stars()
-            regions = self._grow_initial_regions(stars, hard_mode)
-            if regions is None:
-                continue
-
-            if hard_mode:
-                regions = self._carve_unique_solution(regions, stars)
-                if regions is not None:
-                    print(f"[HARD] Unique non-patterned puzzle carved in {attempts} seed attempt(s).")
-                    return regions, stars
-            else:
+            
+            # THE HYBRID BRANCH
+            if not hard_mode:
+                # Use fast legacy BFS for 8x8
+                regions = self._grow_regions_easy(stars)
                 solver = StarBattleSolver(self.size, regions)
                 if solver.count_solutions(max_count=2) == 1:
                     print(f"[EASY] Puzzle generated after {attempts} attempt(s).")
+                    return regions, stars
+            else:
+                # Use strict border carving for 9x9 and larger
+                regions = self._grow_initial_regions(stars, hard_mode=True)
+                if regions is None:
+                    continue
+                regions = self._carve_unique_solution(regions, stars)
+                if regions is not None:
+                    print(f"[HARD/EXPERT] Unique puzzle carved in {attempts} seed attempt(s).")
                     return regions, stars

@@ -118,6 +118,21 @@ class StarstruckEngine:
         elif self.board[r][c] == CellState.EMPTY:
             self.board[r][c] = CellState.MARK
 
+    def cycle_cell(self, r: int, c: int):
+        """Cycles a cell: EMPTY -> MARK -> STAR -> EMPTY"""
+        self.push_state()
+        current = self.board[r][c]
+        
+        if current == CellState.EMPTY:
+            self.board[r][c] = CellState.MARK
+        elif current == CellState.MARK:
+            self.board[r][c] = CellState.STAR
+            self.stars.add((r, c))
+            self._auto_mark(r, c)
+        elif current == CellState.STAR:
+            self.board[r][c] = CellState.EMPTY
+            self.stars.remove((r, c))
+
     def get_conflicts(self) -> Set[Tuple[int, int]]:
         conflicts = set()
         row_counts = [0] * self.size
